@@ -28,6 +28,8 @@ try:
 except Exception:  # pragma: no cover
     plt = None  # type: ignore
 
+DEFAULT_NEWSAPI_API_KEY = "d5208e932fef45cb9ce17c286ec1a6c1"
+
 
 if st is not None:  # pragma: no cover
     st.set_page_config(
@@ -42,6 +44,29 @@ def _require_streamlit() -> None:
         raise RuntimeError(
             "streamlit is not installed. Install dependencies to run `streamlit run app.py`."
         )
+
+
+def _format_published_at(value: str) -> str:
+    """
+    Format NewsAPI `publishedAt` consistently.
+
+    NewsAPI typically returns ISO-8601 timestamps like:
+      2026-03-24T09:12:00Z
+    """
+
+    v = (value or "").strip()
+    if not v:
+        return ""
+    try:
+        import dateparser  # type: ignore
+
+        dt = dateparser.parse(v)
+        if dt is None:
+            return v
+        # Keep seconds for clarity; timezone depends on parsing.
+        return dt.isoformat(timespec="seconds")
+    except Exception:
+        return v
 
 
 if st is not None:  # pragma: no cover
@@ -109,7 +134,7 @@ if st is not None:  # pragma: no cover
 
         api_key = st.sidebar.text_input(
             "NewsAPI Key",
-            value=os.getenv("NEWSAPI_API_KEY", ""),
+            value=os.getenv("NEWSAPI_API_KEY", DEFAULT_NEWSAPI_API_KEY),
             type="password",
             help="If empty, sample data will be used so the app can still run.",
         )
@@ -156,7 +181,7 @@ if st is not None:  # pragma: no cover
                 st.subheader("News Articles")
                 for i, article in enumerate(articles, start=1):
                     st.markdown(f"### {i}. {article.get('title', '(untitled)')}")
-                    st.caption(f"Published: {article.get('publishedAt', '')}")
+                    st.caption(f"Published: {_format_published_at(article.get('publishedAt', ''))}")
                     url = article.get("url")
                     if url:
                         st.markdown(f"[Link]({url})")

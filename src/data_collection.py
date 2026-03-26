@@ -1,17 +1,43 @@
-"""
-Data collection module.
-
-Uses NewsAPI to fetch geopolitical news articles and returns a clean list
-of articles with text fields for downstream NLP steps.
-"""
 
 from __future__ import annotations
 
 from typing import Any
 
 
+def _strip_newsapi_truncation(text: str) -> str:
+    """
+    NewsAPI `content` sometimes ends with a truncation marker like:
+    "... [+1234 chars]". This is not useful for NLP, so we strip it.
+    """
+
+    t = (text or "").strip()
+    if "[+" in t and t.endswith("chars]"):
+        t = t.split("[+", 1)[0].rstrip()
+    return t
+
+
+def build_article_text(title: str, description: str, content: str) -> str:
+    """
+    Build a meaningful raw text string for NER and other NLP steps.
+
+    - Prefer `content` if present (after stripping truncation).
+    - Else use `title + description` if available.
+    - Else fall back to whichever is present.
+    """
+
+    title = (title or "").strip()
+    description = (description or "").strip()
+    content = _strip_newsapi_truncation(content or "")
+
+    if content:
+        return content
+    if title and description:
+        return f"{title} {description}".strip()
+    return title or description
+
+
 def _sample_articles() -> list[dict[str, Any]]:
-    """Small built-in dataset so the project runs without a real API key."""
+
 
     return [
         {
@@ -47,15 +73,7 @@ def fetch_geopolitical_news(
     language: str = "en",
     page_size: int = 10,
 ) -> list[dict[str, Any]]:
-    """
-    Fetch geopolitical news articles from NewsAPI.
 
-    If the API key is missing/placeholder or the request fails, falls back to
-    a small built-in sample dataset.
-
-    Returns:
-        List of article dicts with at least: title, url, publishedAt, text.
-    """
 
     placeholder_keys = {"", "YOUR_NEWSAPI_KEY", "YOUR_API_KEY", None}
     if api_key in placeholder_keys:
@@ -92,8 +110,7 @@ def fetch_geopolitical_news(
             article_url = a.get("url") or ""
             content = a.get("content") or ""
 
-            # Choose the best available text source.
-            text = content.strip() if content.strip() else (description.strip() if description.strip() else title.strip())
+            text = build_article_text(title=title, description=description, content=content)
 
             cleaned.append(
                 {
@@ -115,9 +132,7 @@ def fetch_geopolitical_news(
 
 
 def build_clean_text_list(articles: list[dict[str, Any]]) -> list[str]:
-    """
-    Return a clean list of article texts for downstream processing.
-    """
+   
 
     texts: list[str] = []
     for a in articles:

@@ -1,19 +1,4 @@
-"""
-Event extraction module.
 
-Classifies geopolitical events into:
-- Conflict
-- Diplomacy
-- Trade
-- Sanctions
-- Neutral
-
-Primary approach:
-- Transformers zero-shot classification (BART MNLI) with candidate labels.
-
-Fallback:
-- Simple keyword heuristics if transformers/model download fails.
-"""
 
 from __future__ import annotations
 
@@ -51,7 +36,7 @@ class TransformersEventClassifier:
             self._use_keyword_fallback = True
 
     def _keyword_fallback(self, text: str) -> dict[str, float]:
-        """Very lightweight classifier so the pipeline still runs."""
+       
 
         t = (text or "").lower()
 
@@ -84,12 +69,7 @@ class TransformersEventClassifier:
         return {best_label: conf}
 
     def classify_event(self, text: str) -> dict[str, Any]:
-        """
-        Classify event type from input text.
-
-        Returns:
-            {"event_type": str, "confidence": float}
-        """
+        
 
         if not (text or "").strip():
             return {"event_type": "Neutral", "confidence": 0.0}
@@ -99,8 +79,7 @@ class TransformersEventClassifier:
             event_type = next(iter(kw.keys()))
             return {"event_type": event_type, "confidence": float(kw[event_type])}
 
-        # Zero-shot classification returns labels + scores.
-        # We map the best label to our expected set.
+        
         try:
             result = self._pipeline(
                 text,

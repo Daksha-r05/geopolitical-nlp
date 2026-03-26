@@ -14,19 +14,35 @@ from typing import Any
 
 from src.data_collection import fetch_geopolitical_news, build_clean_text_list
 from src.preprocessing import SpacyPreprocessor
-from src.ner import extract_entities
+from src.ner import extract_entities, load_spacy_ner_model
 from src.event_extraction import TransformersEventClassifier
 from src.sentiment import sentiment_polarity
 from src.knowledge_graph import build_country_knowledge_graph
 from src.timeline import build_timeline
 from src.impact import compute_event_type_impacts
 
+DEFAULT_NEWSAPI_API_KEY = "d5208e932fef45cb9ce17c286ec1a6c1"
 
-def run_pipeline(query: str, limit: int) -> dict[str, Any]:
-    api_key = os.getenv("NEWSAPI_API_KEY", "YOUR_NEWSAPI_KEY")
+
+def _fmt_list(values: list[str]) -> str:
+    return ", ".join(values) if values else "None"
+
+
+def run_pipeline(query: str, limit: int, debug: bool = False) -> dict[str, Any]:
+    api_key = os.getenv("NEWSAPI_API_KEY", DEFAULT_NEWSAPI_API_KEY)
 
     preprocessor = SpacyPreprocessor()
-    nlp = preprocessor.get_nlp()
+    # Use a dedicated NER model (raw text only).
+    try:
+        ner_nlp = load_spacy_ner_model()
+    except Exception:
+        ner_nlp = preprocessor.get_nlp()
+        if debug:
+            print(
+                "WARNING: spaCy model `en_core_web_sm` not available. "
+                "NER will likely return empty lists. Install with: "
+                "python -m spacy download en_core_web_sm"
+            )
 
     event_classifier = TransformersEventClassifier()
 
@@ -43,14 +59,27 @@ def run_pipeline(query: str, limit: int) -> dict[str, Any]:
 
     processed_events = []
     for article in articles:
-        text = article["text"]
-        entities = extract_entities(text=text, nlp=nlp)
-        processed_text = preprocessor.preprocess_for_model(text)
+        raw_text = (article.get("text") or "").strip()
+
+        if debug:
+            print("\n--- RAW TEXT (before NER) ---")
+            print(raw_text[:800] + ("..." if len(raw_text) > 800 else ""))
+
+        entities = extract_entities(text=raw_text, nlp=ner_nlp)
+
+        if debug:
+            print("--- ENTITIES ---")
+            print("GPE:", _fmt_list(entities.get("GPE", [])))
+            print("ORG:", _fmt_list(entities.get("ORG", [])))
+            print("PERSON:", _fmt_list(entities.get("PERSON", [])))
+
+        # Preprocess separately for event classification (NOT for NER).
+        processed_text = preprocessor.preprocess_for_model(raw_text)
 
         event = event_classifier.classify_event(
             text=processed_text,
         )
-        sentiment = sentiment_polarity(text)
+        sentiment = sentiment_polarity(raw_text, debug=debug)
 
         processed_events.append(
             {
@@ -84,12 +113,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--query", type=str, default="geopolitical conflict sanctions")
     parser.add_argument("--limit", type=int, default=10)
     parser.add_argument("--output-json", type=str, default="")
+    parser.add_argument("--debug", action="store_true", help="Print raw text and detected entities")
     return parser.parse_args()
 
 
 def main() -> None:
     args = parse_args()
-    result = run_pipeline(query=args.query, limit=args.limit)
+    result = run_pipeline(query=args.query, limit=args.limit, debug=bool(args.debug))
 
     if args.output_json:
         with open(args.output_json, "w", encoding="utf-8") as f:

@@ -1,8 +1,4 @@
-"""
-Impact scoring module.
 
-Impact Score = f(num_countries, sentiment, frequency)
-"""
 
 from __future__ import annotations
 
@@ -18,16 +14,7 @@ def _safe_float(value: Any, default: float = 0.0) -> float:
 
 
 def compute_event_type_impacts(processed_events: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """
-    Compute impact score per event type.
-
-    Heuristic scoring (simple but stable):
-      - frequency: how often the event type appears
-      - num_countries: average count of countries mentioned per event
-      - sentiment: average polarity (boosts both positive and negative intensity)
-
-    Impact Score = (avg_num_countries) * (1 + abs(avg_sentiment)) * log(1 + frequency)
-    """
+   
 
     by_type: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for e in processed_events:
@@ -61,7 +48,7 @@ def compute_event_type_impacts(processed_events: list[dict[str, Any]]) -> list[d
             }
         )
 
-    # Sort descending by impact score.
+    
     impacts_sorted = sorted(impacts, key=lambda x: x["impact_score"], reverse=True)
     return impacts_sorted
 

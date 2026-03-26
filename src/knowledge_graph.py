@@ -1,10 +1,4 @@
-"""
-Knowledge graph module.
 
-Builds a NetworkX graph:
-- Nodes: Countries (GPE)
-- Edges: relationships with sentiment-weighted co-occurrence
-"""
 
 from __future__ import annotations
 
@@ -12,14 +6,7 @@ from typing import Any
 
 
 def build_country_knowledge_graph(processed_events: list[dict[str, Any]]) -> Any:
-    """
-    Build a country co-occurrence graph.
-
-    For each event:
-    - collect countries from event['entities']['GPE']
-    - add edges between every pair of countries in that event
-    - edge 'weight' accumulates sentiment * confidence
-    """
+    
 
     try:
         import networkx as nx  # type: ignore

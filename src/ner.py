@@ -9,26 +9,45 @@ Extracts:
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Optional
 
 
-def extract_entities(text: str, nlp: Any) -> dict[str, list[str]]:
+def load_spacy_ner_model() -> Any:
+    """
+    Load spaCy's English NER model.
+
+    Note:
+      This expects `en_core_web_sm` to be installed:
+        python -m spacy download en_core_web_sm
+    """
+
+    import spacy  # type: ignore
+
+    return spacy.load("en_core_web_sm")
+
+
+def extract_entities(text: str, nlp: Optional[Any] = None) -> dict[str, list[str]]:
     """
     Extract named entities from the input text.
 
     Args:
         text: Raw input text.
-        nlp: spaCy language pipeline.
+        nlp: spaCy language pipeline (optional). If not provided, this function
+            will try to load `en_core_web_sm`.
 
     Returns:
         Dict with keys: GPE, ORG, PERSON (values are deduplicated lists).
     """
 
-    if not text:
+    if not (text or "").strip():
         return {"GPE": [], "ORG": [], "PERSON": []}
 
     if nlp is None:
-        return {"GPE": [], "ORG": [], "PERSON": []}
+        try:
+            nlp = load_spacy_ner_model()
+        except Exception:
+            # Keep pipeline runnable even if spaCy model isn't installed.
+            return {"GPE": [], "ORG": [], "PERSON": []}
 
     doc = nlp(text)
 
