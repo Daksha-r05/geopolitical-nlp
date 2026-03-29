@@ -62,3 +62,10 @@ export NEWSAPI_API_KEY="YOUR_NEWSAPI_KEY"
 
 If the API key is missing, the project automatically uses built-in sample articles so the rest of the pipeline can still run.
 
+**Security:** Never commit your real NewsAPI key. Use `NEWSAPI_API_KEY` locally or in CI secrets.
+
+## Git / pushing to GitHub
+
+- Virtual environments (`.venv/`, `.venv311/`, `venv/`) are listed in `.gitignore` and must not be committed.
+- After cloning, create a fresh venv and `pip install -r requirements.txt`.
+

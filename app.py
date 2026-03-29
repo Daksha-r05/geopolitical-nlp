@@ -10,7 +10,12 @@ from typing import Any
 from src.data_collection import build_clean_text_list, fetch_geopolitical_news
 from src.event_extraction import TransformersEventClassifier
 from src.impact import compute_event_type_impacts
-from src.knowledge_graph import build_country_knowledge_graph, draw_country_knowledge_graph
+from src.knowledge_graph import (
+    build_country_knowledge_graph,
+    draw_country_knowledge_graph,
+    draw_timeline_country_graph,
+)
+from src.interactive_graph import nx_to_pyvis_html
 from src.ner import extract_entities
 from src.preprocessing import SpacyPreprocessor
 from src.sentiment import sentiment_polarity
@@ -28,7 +33,8 @@ try:
 except Exception:  # pragma: no cover
     plt = None  # type: ignore
 
-DEFAULT_NEWSAPI_API_KEY = "d5208e932fef45cb9ce17c286ec1a6c1"
+# Set NEWSAPI_API_KEY in the environment (see README). Do not commit real keys.
+DEFAULT_NEWSAPI_API_KEY = "YOUR_NEWSAPI_API_KEY"
 
 
 if st is not None:  # pragma: no cover
@@ -216,12 +222,30 @@ if st is not None:  # pragma: no cover
                 st.subheader("Knowledge Graph (Countries)")
                 st.caption("Nodes represent countries; edges represent co-occurrence with sentiment-weighted edges.")
 
+                st.markdown("**Interactive graph (PyVis)**")
+                try:
+                    import streamlit.components.v1 as components
+
+                    graph_html_path = os.path.join(os.path.dirname(__file__), "graph.html")
+                    html = nx_to_pyvis_html(result["graph"], output_html_path=graph_html_path)
+                    components.html(html, height=700, scrolling=True)
+                except Exception as e:
+                    st.warning(f"Interactive graph unavailable: {e}")
+
+                st.divider()
+                st.markdown("**Static graph (matplotlib)**")
                 if plt is None:
                     st.error("matplotlib is not installed.")
                 else:
-                    fig, ax = plt.subplots(figsize=(10, 7))
-                    draw_country_knowledge_graph(result["graph"], ax=ax)
-                    st.pyplot(fig)
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        fig, ax = plt.subplots(figsize=(8, 6))
+                        draw_country_knowledge_graph(result["graph"], ax=ax)
+                        st.pyplot(fig)
+                    with col2:
+                        fig2, ax2 = plt.subplots(figsize=(8, 6))
+                        draw_timeline_country_graph(articles, ax=ax2)
+                        st.pyplot(fig2)
 
             with tab_timeline:
                 st.subheader("Timeline")

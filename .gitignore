@@ -1,0 +1,29 @@
+# Virtual environments (never commit)
+.venv/
+.venv311/
+venv/
+env/
+.env
+.env.*
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+.eggs/
+dist/
+build/
+
+# IDE / OS
+.DS_Store
+.idea/
+.vscode/
+
+# Generated at runtime
+graph.html
+
+# Jupyter
+.ipynb_checkpoints/

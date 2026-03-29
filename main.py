@@ -21,7 +21,8 @@ from src.knowledge_graph import build_country_knowledge_graph
 from src.timeline import build_timeline
 from src.impact import compute_event_type_impacts
 
-DEFAULT_NEWSAPI_API_KEY = "d5208e932fef45cb9ce17c286ec1a6c1"
+# Set NEWSAPI_API_KEY in the environment (see README). Do not commit real keys.
+DEFAULT_NEWSAPI_API_KEY = "YOUR_NEWSAPI_API_KEY"
 
 
 def _fmt_list(values: list[str]) -> str:

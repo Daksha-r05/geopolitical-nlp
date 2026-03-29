@@ -1,6 +1,8 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
+import re
 from typing import Any
 
 
@@ -67,6 +69,135 @@ def _sample_articles() -> list[dict[str, Any]]:
     ]
 
 
+def _load_filter_nlp() -> Any | None:
+    """
+    Load spaCy model for lightweight NLP filtering.
+    Falls back to None if unavailable.
+    """
+
+    try:
+        import spacy  # type: ignore
+
+        return spacy.load("en_core_web_sm")
+    except Exception:
+        return None
+
+
+def _is_geopolitical_article(text: str, nlp: Any | None) -> bool:
+    """
+    Lightweight NLP-based relevance filter.
+
+    We do NOT rely only on keywords:
+    - Uses entity signals (GPE/ORG/PERSON) when spaCy model is available
+    - Uses keyword hints as a secondary signal only
+    """
+
+    t = (text or "").strip()
+    if not t:
+        return False
+
+    keyword_score = 0
+    keyword_patterns = [
+        r"\bdiplomac\w*",
+        r"\bgeopolitic\w*",
+        r"\binternational\b",
+        r"\bforeign policy\b",
+        r"\bsanction\w*",
+        r"\bconflict\w*",
+        r"\btrade\b",
+        r"\btariff\w*",
+        r"\bceasefire\b",
+        r"\bgovernment\b",
+        r"\bministry\b",
+        r"\bunited nations\b",
+        r"\bnato\b",
+        r"\beu\b",
+    ]
+    for p in keyword_patterns:
+        if re.search(p, t, flags=re.IGNORECASE):
+            keyword_score += 1
+
+    if nlp is None:
+        # Fallback only if NLP model isn't available.
+        return keyword_score >= 2
+
+    try:
+        doc = nlp(t)
+        gpe_count = sum(1 for e in doc.ents if e.label_ == "GPE")
+        org_count = sum(1 for e in doc.ents if e.label_ == "ORG")
+        person_count = sum(1 for e in doc.ents if e.label_ == "PERSON")
+
+        # NLP-driven relevance rules:
+        # - strong geo signal via multiple GPEs
+        # - or one GPE + institution/person + at least one political/economic cue
+        if gpe_count >= 2:
+            return True
+        if gpe_count >= 1 and (org_count >= 1 or person_count >= 1) and keyword_score >= 1:
+            return True
+        if gpe_count >= 1 and keyword_score >= 2:
+            return True
+
+        return False
+    except Exception:
+        return keyword_score >= 2
+
+
+def _tokenize_query(query: str) -> set[str]:
+    tokens = re.findall(r"[a-zA-Z][a-zA-Z0-9\-]{1,}", (query or "").lower())
+    stop = {"the", "and", "for", "with", "from", "that", "this", "into", "about", "world", "news"}
+    return {t for t in tokens if t not in stop}
+
+
+def _score_article_match_importance(article: dict[str, Any], query_tokens: set[str], nlp: Any | None) -> float:
+    """
+    Combined score for ranking:
+    - query match score (primary)
+    - entity/importance score (secondary)
+    - recency score (small boost)
+    """
+
+    text = (article.get("text") or "").strip()
+    title = (article.get("title") or "").strip()
+    full_text = f"{title} {text}".lower()
+    words = set(re.findall(r"[a-zA-Z][a-zA-Z0-9\-]{1,}", full_text))
+
+    # Query match
+    overlap = len(query_tokens.intersection(words))
+    match_score = overlap / max(1, len(query_tokens))
+
+    # NLP importance signal (entities) if model available
+    entity_score = 0.0
+    if nlp is not None and text:
+        try:
+            doc = nlp(text)
+            gpe = sum(1 for e in doc.ents if e.label_ == "GPE")
+            org = sum(1 for e in doc.ents if e.label_ == "ORG")
+            person = sum(1 for e in doc.ents if e.label_ == "PERSON")
+            entity_score = min(1.0, (gpe * 0.35 + org * 0.20 + person * 0.10))
+        except Exception:
+            entity_score = 0.0
+
+    # Recency (last 7 days gets higher weight)
+    recency = 0.0
+    published_at = (article.get("publishedAt") or "").strip()
+    if published_at:
+        try:
+            import dateparser  # type: ignore
+
+            dt = dateparser.parse(published_at)
+            if dt is not None:
+                now = datetime.now(timezone.utc)
+                if dt.tzinfo is None:
+                    dt = dt.replace(tzinfo=timezone.utc)
+                age_days = max(0.0, (now - dt).total_seconds() / 86400.0)
+                recency = max(0.0, 1.0 - min(age_days, 7.0) / 7.0)
+        except Exception:
+            recency = 0.0
+
+    # Weighted score: highest match first, then importance, then recency
+    return 0.65 * match_score + 0.25 * entity_score + 0.10 * recency
+
+
 def fetch_geopolitical_news(
     api_key: str,
     query: str,
@@ -86,21 +217,51 @@ def fetch_geopolitical_news(
             return _sample_articles()[: max(1, page_size)]
 
         url = "https://newsapi.org/v2/everything"
-        params = {
-            "q": query,
-            "language": language,
-            "pageSize": page_size,
-            "sortBy": "publishedAt",
-            "apiKey": api_key,
-        }
+        broad_query = f"({query}) OR international OR politics OR world"
+        nlp = _load_filter_nlp()
+        query_tokens = _tokenize_query(query)
 
-        resp = requests.get(url, params=params, timeout=20)
-        if resp.status_code != 200:
-            # Fallback to sample to keep the project running.
-            return _sample_articles()[: max(1, page_size)]
+        # Fetch multiple pages so we can filter and still return enough items.
+        max_pages = 4
+        api_page_size = min(50, max(20, page_size))
+        articles: list[dict[str, Any]] = []
+        seen_urls: set[str] = set()
+        now_utc = datetime.now(timezone.utc)
+        from_date = (now_utc - timedelta(days=7)).date().isoformat()
+        to_date = now_utc.date().isoformat()
 
-        payload = resp.json()
-        articles = payload.get("articles") or []
+        for page in range(1, max_pages + 1):
+            params = {
+                "q": broad_query,
+                "language": language,
+                "pageSize": api_page_size,
+                "page": page,
+                "from": from_date,
+                "to": to_date,
+                "sortBy": "relevancy",
+                "apiKey": api_key,
+            }
+            resp = requests.get(url, params=params, timeout=20)
+            if resp.status_code != 200:
+                continue
+
+            payload = resp.json()
+            batch = payload.get("articles") or []
+            if not batch:
+                break
+
+            for a in batch:
+                article_url = (a.get("url") or "").strip()
+                if article_url and article_url in seen_urls:
+                    continue
+                if article_url:
+                    seen_urls.add(article_url)
+                articles.append(a)
+
+            # Stop early if we have enough candidates.
+            if len(articles) >= page_size * 6:
+                break
+
         cleaned: list[dict[str, Any]] = []
 
         for a in articles:
@@ -111,6 +272,8 @@ def fetch_geopolitical_news(
             content = a.get("content") or ""
 
             text = build_article_text(title=title, description=description, content=content)
+            if not _is_geopolitical_article(text=text, nlp=nlp):
+                continue
 
             cleaned.append(
                 {
@@ -126,7 +289,13 @@ def fetch_geopolitical_news(
         if not cleaned:
             return _sample_articles()[: max(1, page_size)]
 
-        return cleaned[:page_size]
+        # Rank by combined match + importance + recency.
+        ranked = sorted(
+            cleaned,
+            key=lambda a: _score_article_match_importance(a, query_tokens=query_tokens, nlp=nlp),
+            reverse=True,
+        )
+        return ranked[:page_size]
     except Exception:
         return _sample_articles()[: max(1, page_size)]
 
