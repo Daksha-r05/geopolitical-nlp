@@ -69,3 +69,4 @@ If the API key is missing, the project automatically uses built-in sample articl
 - Virtual environments (`.venv/`, `.venv311/`, `venv/`) are listed in `.gitignore` and must not be committed.
 - After cloning, create a fresh venv and `pip install -r requirements.txt`.
 
+---hiii this Nishta
